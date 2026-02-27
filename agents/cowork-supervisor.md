@@ -59,29 +59,80 @@ color: yellow
    - `memory_pressure` — 不是 CRITICAL
    - `ps aux | grep claude | grep -v grep` — 清理残留进程
 
-2. **创建 Team** 并派发任务 (用 TaskCreate + Task 工具)
+2. **启动后台监控脚本** `bash ~/Scripts/cowork_supervisor_v2.sh &`
 
-3. **进入监控循环**
+3. **创建 Team** 并派发任务 (用 TaskCreate + Task 工具)
 
-## 监控循环 (每 60-90 秒)
+4. **进入监控循环**
 
-每轮检查三个维度：
+## 监控循环 (每 60 秒)
 
-### 进程存活
+### 核心检测: Cowork 日志监控 (最可靠)
+
 ```bash
-ps aux | grep -E "claude.*(agent|task)" | grep -v grep
+# 1. 检查 Cowork Agent 进程日志 — 唯一可靠的活动信号
+COWORK_LOG="$HOME/Library/Logs/Claude/cowork_vm_node.log"
+LAST_MOD=$(stat -f %m "$COWORK_LOG")
+SECONDS_AGO=$(( $(date +%s) - LAST_MOD ))
+
+# 2. 检查最后状态: active=0 + Exited = Agent 已停止
+tail -5 "$COWORK_LOG" | grep -E "active=|Exited|Spawn succeeded"
 ```
+
+Agent 生命周期事件:
+- `"Spawn succeeded"` → Agent 在跑 (正常)
+- `"Exited, code=0"` → Agent 正常结束 → **需要催促继续!**
+- `"Cleaned up, remaining active=0"` → 无活跃进程 → **确认已停**
+- `"kill called with signal: SIGTERM"` → 正在停止
+- `"oom=true"` → 内存不足导致退出 → 需要减载后重启
+
+**重要: 不要用截图比对检测!** macOS 桌面有时钟、通知、光标闪烁等动态元素，截图 MD5 永远不同，会导致永远误判为"Agent working"。
 
 ### 资源水位
 ```bash
 sysctl vm.swapusage  # swap > 7GB → 告警, > 9GB → 紧急减载
-memory_pressure
 ```
 
-### 任务进度
-- `TaskList` 查看所有任务状态
-- Agent 超过 5 分钟无输出 → 疑似卡死
-- Agent 超过预期时间 50% → SendMessage 询问进度
+### 辅助检测
+- Claude 主进程 CPU: `ps aux | grep "[C]laude.app/Contents/MacOS/Claude"` — 活跃 >10%, 空闲 <2%
+- `main.log` 中是否只有 SkillsPlugin 心跳 (每10分钟) = Agent 已停很久
+
+## 催促 Claude Desktop Cowork 的方法
+
+当检测到 Agent 停止时，通过 GUI 自动发送消息:
+
+```bash
+# 1. 复制消息到剪贴板 (不要用 keystroke 输入中文，会乱码)
+echo -n "Continue! Start the next task immediately." | pbcopy
+
+# 2. pyautogui 点击回复框获取焦点 (Electron WebView 必须用这种方式)
+python3 -c "
+import pyautogui, subprocess, time
+subprocess.run(['osascript', '-e', 'tell application \"Claude\" to activate'])
+time.sleep(0.8)
+pyautogui.click(200, 1032)  # 回复框坐标，根据窗口大小调整
+time.sleep(0.3)
+"
+
+# 3. osascript 粘贴并发送
+osascript -e '
+tell application "System Events"
+    keystroke "a" using command down
+    delay 0.1
+    key code 51
+    delay 0.2
+    keystroke "v" using command down
+    delay 0.5
+    key code 36
+end tell
+'
+```
+
+**GUI 自动化注意事项:**
+- `keystroke` 不支持中文输入 (会被 IME 搞乱)，必须用 `pbcopy` + `Cmd+V` 粘贴
+- `pyautogui.hotkey('command', 'v')` 在 macOS 上不可靠，用 osascript 的 `keystroke "v" using command down` 代替
+- AppleScript 的 `click at {x,y}` 对 Electron WebView 无效，必须用 pyautogui.click()
+- 回复框坐标与窗口大小/位置有关，用 `osascript -e 'tell application "System Events" to tell process "Claude" to get {position, size} of window 1'` 获取窗口信息后计算
 
 ## 异常处理
 
@@ -116,12 +167,19 @@ memory_pressure
 每轮监控后向用户汇报:
 ```
 ## Cowork 状态 [时间]
-- 活跃 Agent: X/Y
+- Agent 状态: [Running/Idle] (cowork_vm_node.log 最后事件)
 - 完成任务: A/B
 - 资源: Swap X.XGB
 - 异常: [无/描述]
+- 催促次数: N
 - 下一步: [计划]
 ```
+
+## 后台监控脚本
+
+启动: `bash ~/Scripts/cowork_supervisor_v2.sh &`
+查看日志: `tail -f /tmp/cowork_supervisor_v2.log`
+停止: `kill $(cat /tmp/cowork_supervisor_v2.pid)`
 
 ## 原则
 
@@ -131,3 +189,4 @@ memory_pressure
 4. 每个 Agent 的 prompt 要自包含
 5. 绝不提前退出，绝不放弃未完成的任务
 6. Supervisor 是最后一个离场的人
+7. **检测基于日志流量，不基于截图比对**

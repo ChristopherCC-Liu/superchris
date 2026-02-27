@@ -1,19 +1,21 @@
 # Cowork Supervisor Plugin
 
-Monitor, manage, and recover multi-agent teams in Claude Code.
+Monitor, manage, and recover multi-agent teams in Claude Code and Claude Desktop.
 
 ## Features
 
-- **Automated monitoring loop** — checks agent health, resource pressure, and task progress every 60-90s
+- **Log-based agent detection** — monitors `cowork_vm_node.log` for Spawn/Exit events (not screenshots)
+- **Auto-nudge** — when agent stops, automatically sends message to Claude Desktop to continue
 - **Crash recovery** — detects stuck agents and re-dispatches with preserved context
 - **Resource protection** — monitors swap/memory pressure, auto-reduces parallelism when needed
 - **Progress snapshots** — periodic state saves for recovery after interruptions
-- **Status reports** — structured updates on team progress
+- **Background watchdog script** — `cowork_supervisor_v2.sh` runs independently for up to 8 hours
 
 ## Requirements
 
-- Claude Code CLI
-- `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` environment variable set
+- Claude Code CLI or Claude Desktop with Cowork
+- Python 3 with `pyautogui` (for GUI nudging)
+- macOS (uses `osascript`, `cliclick`, `pbcopy`)
 
 ## Usage
 
@@ -23,19 +25,43 @@ Monitor, manage, and recover multi-agent teams in Claude Code.
 ```
 
 ### Trigger Phrases
-The supervisor agent also activates on these phrases:
-- "启动 Supervisor"
-- "监控 Cowork"
-- "开始监工"
-- "Start supervisor"
-- "Monitor cowork"
+- "启动 Supervisor" / "监控 Cowork" / "开始监工"
+- "Start supervisor" / "Monitor cowork"
 
-### What Happens
-1. **Pre-flight check** — verifies system resources and cleans up stale processes
-2. **Team creation** — breaks your task into parallel subtasks and spawns agents
-3. **Monitoring loop** — continuously checks health, progress, and resources
-4. **Exception handling** — automatically recovers from crashes, RPC errors, and resource exhaustion
-5. **Final report** — generates summary when all tasks complete, waits for your confirmation
+### Background Watchdog
+```bash
+# Start 8-hour monitoring
+bash scripts/cowork_supervisor_v2.sh &
+
+# View live log
+tail -f /tmp/cowork_supervisor_v2.log
+
+# Stop
+kill $(cat /tmp/cowork_supervisor_v2.pid)
+```
+
+## How Detection Works
+
+### V2: Log-based (reliable)
+Monitors `~/Library/Logs/Claude/cowork_vm_node.log`:
+- `"Spawn succeeded"` → agent is running
+- `"Exited, code=0"` → agent stopped → auto-nudge
+- `"active=0"` → no active processes → confirmed idle
+
+### V1: Screenshot comparison (deprecated, unreliable)
+~~Compares screenshot MD5 hashes~~ — fails on macOS because clock, notifications, and cursor blinking cause screenshots to always differ.
+
+## How Nudging Works
+
+When agent is detected as idle:
+1. Message copied to clipboard via `pbcopy`
+2. `pyautogui.click()` focuses Claude Desktop reply box (Electron WebView requires this)
+3. `osascript` pastes (`Cmd+V`) and sends (`Enter`)
+
+**Known limitations:**
+- `keystroke` cannot type Chinese directly (IME garbles it) — use clipboard paste
+- `pyautogui.hotkey('command', 'v')` unreliable on macOS — use osascript instead
+- AppleScript `click at {x,y}` doesn't work on Electron WebView — use pyautogui
 
 ## Resource Guidelines
 
@@ -47,13 +73,13 @@ The supervisor agent also activates on these phrases:
 
 ## Installation
 
-Copy this plugin directory to your Claude Code plugins folder:
-
 ```bash
-cp -r cowork-supervisor-plugin ~/.claude/plugins/local/cowork-supervisor
-```
+git clone https://github.com/ChristopherCC-Liu/superchris.git
+cp -r superchris ~/.claude/plugins/local/cowork-supervisor
 
-Or add as a local plugin path in your Claude Code settings.
+# Install pyautogui if needed
+pip install pyautogui
+```
 
 ## License
 
