@@ -58,8 +58,9 @@ color: yellow
    - `sysctl vm.swapusage` — swap < 5GB
    - `memory_pressure` — 不是 CRITICAL
    - `ps aux | grep claude | grep -v grep` — 清理残留进程
+   - 检查 Claude Desktop 和 Cowork VM 进程是否存活
 
-2. **启动后台监控脚本** `bash ~/Scripts/cowork_supervisor_v2.sh &`
+2. **启动后台自愈监控脚本** `bash ~/Scripts/cowork_supervisor_v3.sh &`
 
 3. **创建 Team** 并派发任务 (用 TaskCreate + Task 工具)
 
@@ -143,16 +144,32 @@ end tell
 4. 无响应 → TaskStop 强制终止
 5. Task 工具重新派发，prompt 带上: "继续未完成的工作: [描述] / 已完成: [摘要] / 从 [断点] 继续"
 
+### Claude Desktop 崩溃 / VM 挂掉 (V3 新增 - 自动处理)
+后台脚本 V3 自动检测并重启:
+1. Desktop 进程消失 → 自动 `osascript quit` + `open -a Claude`
+2. VM 进程消失但 Desktop 还在 → 等 15s，仍未恢复则重启 Desktop
+3. 最多自动重启 5 次，超过则通知用户手动处理
+4. 重启后等待 VM 就绪再继续监控
+
+### claude.ai 服务中断 (503/504) (V3 新增)
+1. 检测 main.log 中的 503 错误频率
+2. 超过 3 次 → 通知用户，暂停催促（避免在服务端故障时无意义地 nudge）
+3. 服务端问题无法自愈，等待恢复后自动继续
+
+### OOM Kill (V3 新增)
+1. 检测 cowork_vm_node.log 中的 `oom=true`
+2. 自动杀掉最大的 Chrome 标签释放内存
+3. Agent 会被 Cowork 自动重新调度
+
 ### RPC Error (进程名冲突)
 1. 保存 TaskList 快照到文件
 2. 通知用户 Cmd+Q 重启 Claude App
 3. 重启后从快照恢复任务
 
-### Swap 爆满 (> 9GB)
-1. 暂停新 Agent 派发
-2. 减少并行数: 5 → 2-3
-3. 建议用户关闭 Chrome/Parallels
-4. swap < 5GB 后恢复
+### Swap 爆满 (V3: 自动减载)
+- \> 7GB: 警告 + 杀最大的 Chrome 标签
+- \> 9GB: 紧急 + 连杀多个 Chrome 标签
+- 内存 free < 10%: 主动释放
 
 ## 持久化保护
 
@@ -177,9 +194,14 @@ end tell
 
 ## 后台监控脚本
 
-启动: `bash ~/Scripts/cowork_supervisor_v2.sh &`
+### V3 (推荐 — 自愈式)
+启动: `bash scripts/cowork_supervisor_v3.sh &`
+查看日志: `tail -f /tmp/cowork_supervisor_v3.log`
+停止: `kill $(cat /tmp/cowork_supervisor_v3.pid)`
+
+### V2 (仅监控+催促)
+启动: `bash scripts/cowork_supervisor_v2.sh &`
 查看日志: `tail -f /tmp/cowork_supervisor_v2.log`
-停止: `kill $(cat /tmp/cowork_supervisor_v2.pid)`
 
 ## 原则
 

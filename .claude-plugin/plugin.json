@@ -1,7 +1,7 @@
 {
   "name": "cowork-supervisor",
   "description": "Cowork Supervisor - Monitor, manage, and recover multi-agent teams in Claude Code. Automatically handles agent crashes, memory pressure, and task coordination.",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "author": {
     "name": "Steve Liu"
   }
