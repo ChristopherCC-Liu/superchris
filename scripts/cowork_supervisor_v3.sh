@@ -316,7 +316,7 @@ while true; do
     log "[#$ROUND] Process:${PROCESS_STATUS} Active:${ACTIVE_STATUS} LastLog:${SECONDS_SINCE}s Swap:${SWAP}M Mem:${MEM_FREE}% 503:${RECENT_503} Left:${HOURS_LEFT}h${MINS_LEFT}m"
 
     # ---- Write real-time status file ----
-    local status_icon="OK"
+    status_icon="OK"
     [ -z "$CLAUDE_PID" ] && status_icon="!!"
     [ -z "$VM_PID_NOW" ] && status_icon="!!"
     [ "$RECENT_503" -gt 3 ] && status_icon="!!"
