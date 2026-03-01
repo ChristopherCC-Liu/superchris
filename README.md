@@ -46,7 +46,13 @@ Monitor, manage, and auto-recover multi-agent teams in Claude Code and Claude De
 # Start 8-hour self-healing monitoring
 bash scripts/cowork_supervisor_v3.sh &
 
-# View live log
+# View current status (updates every round)
+cat /tmp/cowork_status.txt
+
+# Watch periodic reports (updates every 5 rounds / ~6 min)
+tail -f /tmp/cowork_report.txt
+
+# View full debug log
 tail -f /tmp/cowork_supervisor_v3.log
 
 # Stop
@@ -58,6 +64,19 @@ kill $(cat /tmp/cowork_supervisor_v3.pid)
 bash scripts/cowork_supervisor_v2.sh &
 tail -f /tmp/cowork_supervisor_v2.log
 ```
+
+## Reporting Mechanism
+
+V3 provides three layers of continuous reporting:
+
+| Channel | File / Method | Frequency | Use Case |
+|---------|--------------|-----------|----------|
+| **Real-time status** | `/tmp/cowork_status.txt` | Every round (~75s) | Quick check: `cat /tmp/cowork_status.txt` |
+| **Periodic report** | `/tmp/cowork_report.txt` | Every 5 rounds (~6min) | Timeline view: `tail -f /tmp/cowork_report.txt` |
+| **macOS notification** | Notification Center | Every 5 rounds + on alerts | Passive monitoring, no terminal needed |
+| **Full debug log** | `/tmp/cowork_supervisor_v3.log` | Every round | Troubleshooting: `tail -f` |
+
+The status file is **overwritten** each round (always shows current state), while the report file is **appended** (shows history).
 
 ## How Detection Works
 
@@ -125,6 +144,7 @@ pip install pyautogui
 - Swap threshold auto-relief (kill Chrome tabs)
 - Memory pressure monitoring with preemptive cleanup
 - macOS Notification Center alerts with sound
+- **Continuous reporting**: real-time status file + periodic report file + notifications
 - PID file for clean process management
 - Summary report on exit
 
